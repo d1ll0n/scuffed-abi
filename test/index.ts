@@ -111,6 +111,46 @@ const values = {
   ],
 };
 
+const val1 = FunctionFragment.from({
+  inputs: [
+    {
+      components: [
+        {
+          internalType: "uint256",
+          name: "identifier",
+          type: "uint256",
+        },
+        {
+          internalType: "uint256",
+          name: "amount",
+          type: "uint256",
+        },
+        {
+          internalType: "bytes",
+          name: "data",
+          type: "bytes",
+        },
+      ],
+      internalType: "struct ConduitTransfer[]",
+      name: "standardTransfers",
+      type: "tuple[]",
+    }
+  ],
+  name: "executeWithBatch1155",
+  stateMutability: "view",
+  type: "function",
+});
+
+const inputs1 = {
+  standardTransfers: [
+    {
+      identifier: 3,
+      amount: 5000,
+      data: "0xffaabbcc00"
+    }
+  ]
+}
+
 const testContract = () => {
   const iface = new Interface([val]);
   const contract = getScuffedContract(new Contract(constants.AddressZero, iface));
@@ -153,8 +193,12 @@ const testFunction = () => {
   }
 
   scuffed.batchTransfers[0].ids.length.replace(1);
+  scuffed.batchTransfers[0].ids[0].replace(2);
   decoded = iface.decodeFunctionData(val, scuffed.encode())
-  if (decoded.batchTransfers[0].ids.length !== 1) {
+  console.log(decoded.batchTransfers[0].ids[0])
+  if (
+    decoded.batchTransfers[0].ids.length !== 1
+  ) {
     throw Error()
   }
 
@@ -165,6 +209,28 @@ const testFunction = () => {
   }
 }
 
+const testFunction2 = () => {
+  const iface = new Interface([val1]);
+  const scuffed = getScuffedFunction(val1, inputs1);
+
+  scuffed.standardTransfers[0].data.length.replace(3)
+  let decoded = iface.decodeFunctionData(val1, scuffed.encode())
+  if (
+    decoded.standardTransfers[0].data.length !== 8
+  ) {
+    throw Error()
+  }
+  scuffed.standardTransfers[0].data.length.replace(5)
+  scuffed.standardTransfers[0].data.tail.replace('0xaabbccddee'.padEnd(66, '0'))
+  decoded = iface.decodeFunctionData(val1, scuffed.encode())
+  if (
+    decoded.standardTransfers[0].data !== '0xaabbccddee'
+  ) {
+    throw Error()
+  }
+}
+
 testContract()
 testFunction()
+testFunction2()
 console.log('all good')
