@@ -1,0 +1,14 @@
+{
+  "name": "abi-scuffer",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^17.0.36",
+    "ethers": "^5.6.8"
+  },
+  "peerDependencies": {
+    "@types/node": "^17.0.36",
+    "ethers": "^5.6.8"
+  }
+}
