@@ -65,7 +65,7 @@ type DynamicOffsets = {
 
 Arrays and bytes parameters will have an additional `length: ReplaceableOffsets` field.
 
-Static parameters will have values `{ relative: number; absolute: number; replace: (newValue: BigNumberish) => string }`
+Static parameters will simply have the `ReplaceableOffsets` type without a `head` or `tail`.
 
 **Example**
 
@@ -77,25 +77,23 @@ In the example code above, the `scuffedFnCall` will be structured as:
   encodeArgs: () => string // Encode the input parameters without the selector
   execute: () => Promise<Transaction> // Execute the transaction with the updated parameters
   call: () => Promise<string> // Call the function with the updated parameters
-  transfers: [
-    {
-      length: ReplaceableOffsets
+  transfers: {
+    length: ReplaceableOffsets
+    head: ReplaceableOffsets
+    tail: ReplaceableOffsets
+    '0': {
       head: ReplaceableOffsets
       tail: ReplaceableOffsets
-      '0': {
+
+      to: ReplaceableOffsets
+      value: ReplaceableOffsets
+
+      signature: {
+        length: ReplaceableOffsets
         head: ReplaceableOffsets
         tail: ReplaceableOffsets
-
-        to: ReplaceableOffsets
-        value: ReplaceableOffsets
-
-        signature: {
-          length: ReplaceableOffsets
-          head: ReplaceableOffsets
-          tail: ReplaceableOffsets
-        }
       }
     }
-  ]
+  }
 }
 ```
