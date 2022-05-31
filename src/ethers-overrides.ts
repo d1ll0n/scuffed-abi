@@ -1,7 +1,8 @@
 import { Coder, Writer } from "@ethersproject/abi/lib/coders/abstract-coder";
 import { TupleCoder } from "@ethersproject/abi/lib/coders/tuple";
 import { ArrayCoder } from "@ethersproject/abi/lib/coders/array";
-import { DynamicOffsets, FixedOffsets, Offsets } from "./types";
+import { BytesCoder } from "@ethersproject/abi/lib/coders/bytes";
+import { DynamicOffsets, FixedOffsets, Offsets, ReplaceableOffsets } from "./types";
 import { BigNumberish } from "@ethersproject/bignumber";
 import { concat } from "@ethersproject/bytes";
 
@@ -10,8 +11,6 @@ export class ScuffedWriter extends Writer {
   relativeOffsets: Record<string, number> = {};
   absoluteOffsets: Record<string, DynamicOffsets | FixedOffsets> = {};
   children: Record<string, string[]> = {};
-  types: Record<string, string> = {};
-  isDynamic: Record<string, boolean> = {};
 
   constructor(wordSize: number, parentWriter?: ScuffedWriter) {
     super(wordSize);
@@ -20,18 +19,16 @@ export class ScuffedWriter extends Writer {
       this.relativeOffsets = parentWriter.relativeOffsets
       this.absoluteOffsets = parentWriter.absoluteOffsets
       this.children = parentWriter.children
-      this.types = parentWriter.types
-      this.isDynamic = parentWriter.isDynamic
     }
     this.getName.bind(this)
     this.updateChildren.bind(this)
     this.createStructuredOffsetsObject.bind(this)
   }
 
-  replaceWord(offset: Offsets, newValue: BigNumberish) {
+  replaceWord(offset: number, newValue: BigNumberish) {
     const allValues = concat(this._data)
-    const start = allValues.slice(0, offset.absolute);
-    const end = allValues.slice(offset.absolute + 32);
+    const start = allValues.slice(0, offset);
+    const end = allValues.slice(offset + 32);
     this._data = [];
     this._dataLength = 0;
     this._writeData(start)
@@ -73,7 +70,6 @@ export class ScuffedWriter extends Writer {
     for (const child of this.children[parent] || []) {
       const headOffset = this.relativeOffsets[`${child}@head`];
       const tailOffset = this.relativeOffsets[child];
-      // if ()
       this.absoluteOffsets[child] = {
         parent,
         head: headOffset
@@ -91,16 +87,16 @@ export class ScuffedWriter extends Writer {
     }
   };
 
-  getReplaceableAbsoluteOffsets(name: string) {
+  getReplaceableAbsoluteOffsets(name: string): { head?: ReplaceableOffsets; tail?: ReplaceableOffsets; } {
     const { head, tail } = this.absoluteOffsets[name];
     return {
       head: head ? {
         ...head,
-        replace: (value: BigNumberish) => this.replaceWord(head, value)
+        replace: (value: BigNumberish) => this.replaceWord(head.absolute, value)
       } : undefined,
       tail: tail ? {
         ...tail,
-        replace: (value: BigNumberish) => this.replaceWord(tail, value)
+        replace: (value: BigNumberish) => this.replaceWord(tail.absolute, value)
       } : undefined,
     }
   }
@@ -110,6 +106,20 @@ export class ScuffedWriter extends Writer {
     const _offsets = this.getReplaceableAbsoluteOffsets(name);
   
     if (!_children) {
+      if (coder.type === "bytes") {
+        return {
+          head: _offsets.head,
+          tail: {
+            relative: _offsets.tail.relative + 32,
+            absolute: _offsets.tail.absolute + 32,
+            replace: (value: BigNumberish) => this.replaceWord(
+              _offsets.tail.absolute + 32,
+              value
+            )
+          },
+          length: _offsets.tail
+        };
+      }
       return coder.dynamic ? _offsets : _offsets.tail;
     }
   
@@ -238,8 +248,6 @@ export function pack(
     writer.namesNest.push(coder.localName);
 
     const thisName = writer.getName();
-    writer.types[thisName] = coder.name;
-    writer.isDynamic[thisName] = coder.dynamic
     if (parentName) {
       writer.children[parentName].push(thisName);
     }
