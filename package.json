@@ -1,6 +1,6 @@
 {
   "name": "scuffed-abi",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "main": "dist/index.js",
   "license": "MIT",
   "files": ["dist"],
