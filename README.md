@@ -32,7 +32,7 @@ The structure will completely mirror that  of the input parameters.
 Suppose we have the function:
 
 ```typescript
-type SignedTransfer = {
+struct SignedTransfer {
   address to;
   uint256 value;
   bytes signature;
