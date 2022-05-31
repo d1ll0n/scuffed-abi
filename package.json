@@ -3,14 +3,23 @@
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
+  "files": ["dist"],
   "devDependencies": {
     "@types/node": "^17.0.36",
-    "ethers": "^5.6.8"
+    "ethers": "^5.6.8",
+    "rimraf": "^3.0.2",
+    "ts-node": "^10.8.0",
+    "typescript": "^4.7.2"
   },
   "peerDependencies": {
     "ethers": "^5.6.8"
   },
   "repository": {
     "url": "https://github.com/d1ll0n/scuffed-abi"
+  },
+  "scripts": {
+    "prebuild:ts": "rimraf ./dist",
+    "build:ts": "tsc",
+    "prepublish": "yarn build:ts"
   }
 }
