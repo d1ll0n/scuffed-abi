@@ -1,3 +1,5 @@
+import { BigNumberish } from "ethers";
+
 export type Offsets = {
   relative: number;
   absolute: number;
@@ -17,3 +19,7 @@ export type ParamOffsets =
   | ElementOffsets
   | Record<string, ElementOffsets>
   | ElementOffsets[];
+
+export type ReplaceableOffsets = Offsets & {
+  replace: (value: BigNumberish) => string
+}
