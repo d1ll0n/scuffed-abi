@@ -1,33 +1,16 @@
 # Scuffed ABI
 
-Package for modifying ABI encoded data. Mostly useful for low-level testing of calldata offsets or lengths.
+Package for modifying ABI encoded data. Mostly useful for testing failure cases of ABI decoders.
 
 Given an ethers `Contract` object, you can build a scuffed contract using the function `getScuffedContract`.
 
 This will return an object whose keys are the contract's function and which take the same input parameters as their associated functions.
 
-We use a `ReplaceableOffsets` type for each parameter:
+Calling one of these functions will return an object mirroring the structure of the input parameters, with a `ReplaceableOffsets` object for each value's head, tail or length, as well as parameters for all nested values. See [types](#types) for more information on data types.
 
-```typescript
-type Offsets = {
-  relative: number;   // position of the parameter relative to its parent
-  absolute: number;   // absolute position of the parameter in the encoded args
-  replace: (value: BigNumberish) => string; // replace the value in the encoded args
-}
-```
+The `ReplaceableOffsets` type has a function `replace` which allows you to replace a value after it's been encoded.
 
-Dynamic values will have:
-
-```typescript
-type DynamicOffsets = {
-  head: ReplaceableOffsets;
-  tail: ReplaceableOffsets;
-}
-```
-
-Arrays and bytes parameters will have an additional `length: ReplaceableOffsets` field.
-
-The structure will completely mirror that  of the input parameters.
+### Example
 
 Suppose we have the function:
 
@@ -49,9 +32,45 @@ const scuffedFnCall = scuffed.validateSignatures([{
   value: 1000,
   signature: sign(defaultAbiCoder.encode(['address', 'bytes'], [wallet.address, 1000]))
 }]);
+// Modify the offset to the `transfers` array
+scuffedFnCall.transfers.head.replace(0x20)
+// Modify the length of the signature in the first transfer
+scuffedFnCall.transfers[0].signature.length.replace(0x40)
+// Modify the offset to the first transfer
+scuffedFnCall.transfers[0].head.replace(0)
+// Modify `value`
+scuffedFnCall.transfers[0].value.replace(500)
+// Encode the function calldata
+const data = scuffedFnCall.encode()
 ```
 
-The result of this will look like:
+### Types
+
+```typescript
+type ReplaceableOffsets = {
+  relative: number;   // position of the parameter relative to its parent
+  absolute: number;   // absolute position of the parameter in the encoded args
+  replace: (value: BigNumberish) => string; // replace the value in the encoded args
+}
+```
+
+Dynamic values will have:
+
+```typescript
+type DynamicOffsets = {
+  head: ReplaceableOffsets;
+  tail: ReplaceableOffsets;
+}
+```
+
+Arrays and bytes parameters will have an additional `length: ReplaceableOffsets` field.
+
+Static parameters will have values `{ relative: number; absolute: number; replace: (newValue: BigNumberish) => string }`
+
+**Example**
+
+In the example code above, the `scuffedFnCall` will be structured as:
+
 ```typescript
 {
   encode: () => string // Encode the function call with all updated parameters
@@ -79,24 +98,4 @@ The result of this will look like:
     }
   ]
 }
-```
-
-
-
-Static parameters will have values `{ relative: number; absolute: number; replace: (newValue: BigNumberish) => string }`
-
-Where `relative` is the position of the object relative to its parent and `absolute` is the absolute pointer to the value in the encoded arguments buffer.
-
-The `replace` function will replace the 
-
-For example, the function:
-
-```ts
-import { ethers } from "hardhat";
-import getScuffedContract from "scuffed-abi";
-
-async function test() {
-  const contract = await 
-}
-
 ```
