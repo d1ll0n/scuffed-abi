@@ -12,7 +12,8 @@ export class ScuffedWriter extends Writer {
   absoluteOffsets: Record<string, DynamicOffsets | FixedOffsets> = {};
   children: Record<string, string[]> = {};
 
-  constructor(wordSize: number, parentWriter?: ScuffedWriter) {
+
+  constructor(wordSize: number, private parentWriter?: ScuffedWriter) {
     super(wordSize);
     if (parentWriter) {
       this.namesNest = parentWriter.namesNest
@@ -23,6 +24,13 @@ export class ScuffedWriter extends Writer {
     this.getName.bind(this)
     this.updateChildren.bind(this)
     this.createStructuredOffsetsObject.bind(this)
+  }
+
+  get isScuffed() {
+    if (this.parentWriter) {
+      return this.parentWriter.isScuffed
+    }
+    return true;
   }
 
   replaceWord(offset: number, newValue: BigNumberish) {
@@ -172,9 +180,12 @@ ArrayCoder.prototype.encode = function (
 
   if (count === -1) {
     count = value.length;
-    const name = writer.getName();
-    if (!writer.children[name]) {
-      writer.children[name] = [];
+
+    if (writer.isScuffed) {
+      const name = writer.getName();
+      if (!writer.children[name]) {
+        writer.children[name] = [];
+      }
     }
 
     writer.writeValue(value.length);
@@ -189,7 +200,7 @@ ArrayCoder.prototype.encode = function (
         return (target as any)[prop];
       },
     });
-    coders.push(newCoder);
+    coders.push(writer.isScuffed ? newCoder : coder);
   }
 
   return pack(writer, coders, value);
@@ -240,14 +251,16 @@ export function pack(
   const dynamicWriter = new ScuffedWriter(32, writer);
   const updateFuncs: Array<(baseOffset: number) => void> = [];
 
-  const parentName = writer.getName();
+  const parentName = writer.isScuffed ? writer.getName() : '';
   if (parentName && !writer.children[parentName]) writer.children[parentName] = [];
 
   coders.forEach((coder, index) => {
     const value = arrayValues[index];
-    writer.namesNest.push(coder.localName);
+    if (writer.isScuffed) {
+      writer.namesNest.push(coder.localName);
+    }
 
-    const thisName = writer.getName();
+    const thisName = writer.isScuffed && writer.getName();
     if (parentName) {
       writer.children[parentName].push(thisName);
     }
@@ -268,21 +281,25 @@ export function pack(
       // Later, we will receive the total size of the static part
       const writeOffset = staticWriter.writeUpdatableValue();
       updateFuncs.push((baseOffset: number) => {
-        writer.relativeOffsets[`${thisName}@head`] = headOffset;
-        writer.relativeOffsets[thisName] = baseOffset + dynamicOffset;
-        if (thisName.endsWith(']')) {
-          writer.relativeOffsets[thisName] += 32;
+        if (writer.isScuffed) {
+          writer.relativeOffsets[`${thisName}@head`] = headOffset;
+          writer.relativeOffsets[thisName] = baseOffset + dynamicOffset;
+          if (thisName.endsWith(']')) {
+            writer.relativeOffsets[thisName] += 32;
+          }
         }
         writeOffset(baseOffset + dynamicOffset);
       });
     } else {
-      writer.relativeOffsets[thisName] = staticWriter.length;
-      if (thisName.endsWith(']')) {
-        writer.relativeOffsets[thisName] += 32;
+      if (writer.isScuffed) {
+        writer.relativeOffsets[thisName] = staticWriter.length;
+        if (thisName.endsWith(']')) {
+          writer.relativeOffsets[thisName] += 32;
+        }
       }
       coder.encode(staticWriter, value);
     }
-    writer.namesNest.pop();
+    if (writer.isScuffed) writer.namesNest.pop();
   });
 
   // Backfill all the dynamic offsets, now that we know the static length
