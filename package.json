@@ -1,6 +1,6 @@
 {
   "name": "scuffed-abi",
-  "version": "1.0.6",
+  "version": "1.0.9",
   "main": "dist/index.js",
   "license": "MIT",
   "files": [
@@ -31,6 +31,6 @@
     "test": "hardhat test test/test.ts --config test/hardhat.config.ts",
     "prebuild:ts": "rimraf ./dist",
     "build:ts": "tsc",
-    "prepublish": "yarn build:ts"
+    "prepublishOnly": "yarn build:ts"
   }
 }
