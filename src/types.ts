@@ -22,6 +22,7 @@ export type ParamOffsets =
 
 export type ReplaceableOffsets = Offsets & {
   replace: (value: BigNumberish) => string;
+  read: () => string;
 };
 
 type ScuffedValueParameter = ReplaceableOffsets;

@@ -9,7 +9,13 @@ import {
   ReplaceableOffsets,
 } from "./types";
 import { BigNumberish } from "@ethersproject/bignumber";
-import { concat, hexValue } from "@ethersproject/bytes";
+import {
+  arrayify,
+  BytesLike,
+  concat,
+  hexlify,
+  hexValue,
+} from "@ethersproject/bytes";
 
 type LogReplacement = {
   position: number;
@@ -45,6 +51,36 @@ export class ScuffedWriter extends Writer {
     return true;
   }
 
+  /**
+   * Splice the underlying data buffer.
+   * @param start Position to start splice
+   * @param deleteCount Number of bytes to remove
+   * @param newData New bytes to insert - must already be exact size desired
+   * @returns Removed bytes
+   */
+  spliceData(
+    start: number,
+    deleteCount?: number,
+    newData?: BytesLike
+  ): string | undefined {
+    const allValues = concat(this._data);
+    const part1 = allValues.slice(0, start);
+    const part2 = allValues.slice(start + (deleteCount ?? 0));
+    let removedData: string | undefined;
+    if (deleteCount) {
+      removedData = hexlify(allValues.slice(start, start + deleteCount));
+    }
+    this._data = [];
+    this._dataLength = 0;
+
+    this._writeData(part1);
+    if (newData) {
+      this._writeData(arrayify(newData));
+    }
+    this._writeData(part2);
+    return removedData;
+  }
+
   logReplaceWord(
     position: number,
     oldValue: string,
@@ -63,11 +99,15 @@ export class ScuffedWriter extends Writer {
     }
   }
 
+  readWord(offset: number) {
+    const allValues = concat(this._data);
+    return hexValue(allValues.slice(offset, offset + 32));
+  }
+
   replaceWord(offset: number, newValue: BigNumberish, label = "") {
     const allValues = concat(this._data);
     const start = allValues.slice(0, offset);
     const end = allValues.slice(offset + 32);
-    console.log(this.getName());
     this.logReplaceWord(
       offset,
       hexValue(allValues.slice(offset, offset + 32)),
@@ -143,6 +183,7 @@ export class ScuffedWriter extends Writer {
             ...head,
             replace: (value: BigNumberish) =>
               this.replaceWord(head.absolute, value, `${name}.head`),
+            read: () => this.readWord(head.absolute),
           }
         : undefined,
       tail: tail
@@ -150,6 +191,7 @@ export class ScuffedWriter extends Writer {
             ...tail,
             replace: (value: BigNumberish) =>
               this.replaceWord(tail.absolute, value, `${name}.tail`),
+            read: () => this.readWord(tail.absolute),
           }
         : undefined,
     };
@@ -172,6 +214,7 @@ export class ScuffedWriter extends Writer {
                 value,
                 `${name}.tail`
               ),
+            read: () => this.readWord(_offsets.tail.absolute),
           },
           length: _offsets.tail,
         };

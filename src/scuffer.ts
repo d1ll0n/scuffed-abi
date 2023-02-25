@@ -1,5 +1,6 @@
 import {
   AbiCoder,
+  Fragment,
   FunctionFragment,
   Interface,
   ParamType,
@@ -77,7 +78,8 @@ export type ScuffedContract<C extends Contract> = {
     encodeArgs: () => string;
     execute: () => Promise<ContractTransaction>;
     call: () => ReturnType<C["functions"][K]>;
-  } & { [key: string]: ScuffedParameter };
+    writer: ScuffedWriter;
+  } & ScuffedParameter;
 };
 
 export function getScuffedContract<C extends Contract>(
@@ -90,6 +92,17 @@ export function getScuffedContract<C extends Contract>(
   keys.forEach((key) => {
     const fragment = contract.interface.functions[key];
     const name = fragment.name;
+    fragment.inputs.forEach((input, i) => {
+      if (input.name === null || input.name === undefined) {
+        const { type, indexed, components } = input;
+        fragment.inputs[i] = ParamType.fromObject({
+          type,
+          indexed,
+          components,
+          name: `arg${i}`,
+        });
+      }
+    });
     const _fn = (...inputs: any[]) => {
       const coders = fragment.inputs.map((i) => coder._getCoder(i));
       const writer = new ScuffedWriter(32);
@@ -99,32 +112,38 @@ export function getScuffedContract<C extends Contract>(
         0,
         10
       );
-      const rewritableObject: any = coders.reduce(
-        (obj, coder) => ({
-          ...obj,
-          [coder.localName]: writer.createStructuredOffsetsObject(
-            coder.localName,
-            coder
-          ),
-        }),
-        {
-          encode: () => selector.concat(writer.data.slice(2)),
-          encodeArgs: () => writer.data,
-          execute: () =>
-            contract.signer
-              .sendTransaction({
-                to: contract.address,
-                data: rewritableObject.encode(),
-              })
-              .catch((err) => {
-                err.replacements = getReplacementLog(writer);
-                throw err;
-              }),
-          call: async () =>
-            buildCall(writer, contract, fragment, rewritableObject, inputs),
+      const result = {
+        encode: () => selector.concat(writer.data.slice(2)),
+        encodeArgs: () => writer.data,
+        execute: () =>
+          contract.signer
+            .sendTransaction({
+              to: contract.address,
+              data: result.encode(),
+            })
+            .catch((err) => {
+              err.replacements = getReplacementLog(writer);
+              throw err;
+            }),
+        call: async () => buildCall(writer, contract, fragment, result, inputs),
+        writer,
+      };
+      coders.forEach((coder, i) => {
+        if (coders.length === 1 && coder.localName === "arg0") {
+          Object.assign(
+            result,
+            writer.createStructuredOffsetsObject(coder.localName, coder)
+          );
+        } else {
+          Object.assign(result, {
+            [coder.localName]: writer.createStructuredOffsetsObject(
+              coder.localName,
+              coder
+            ),
+          });
         }
-      );
-      return rewritableObject;
+      });
+      return result;
     };
     if (
       Object.values(contract.interface.functions).filter((f) => f.name === name)
