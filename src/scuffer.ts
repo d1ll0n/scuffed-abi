@@ -1,8 +1,14 @@
-import { AbiCoder, FunctionFragment, ParamType } from "@ethersproject/abi";
-import { Contract } from "ethers";
+import {
+  AbiCoder,
+  FunctionFragment,
+  Interface,
+  ParamType,
+} from "@ethersproject/abi";
+import { BaseContract, Contract, ContractTransaction } from "ethers";
 import { keccak256 } from "@ethersproject/keccak256";
 import { pack, ScuffedWriter } from "./ethers-overrides";
 import { Logger } from "ethers/lib/utils";
+import { ReplaceableOffsets, ScuffedParameter } from "./types";
 
 function getReplacementLog(writer: ScuffedWriter) {
   return writer.replacements
@@ -57,15 +63,34 @@ async function buildCall(
   }
 }
 
-export function getScuffedContract(contract: Contract) {
+type FunctionNames<Obj, K> = K extends string
+  ? K extends keyof Obj
+    ? K
+    : never
+  : never;
+
+export type ScuffedContract<C extends Contract> = {
+  [K in FunctionNames<C["functions"], keyof C["functions"]>]: (
+    ...args: Parameters<C["functions"][K]>
+  ) => {
+    encode: () => string;
+    encodeArgs: () => string;
+    execute: () => Promise<ContractTransaction>;
+    call: () => ReturnType<C["functions"][K]>;
+  } & { [key: string]: ScuffedParameter };
+};
+
+export function getScuffedContract<C extends Contract>(
+  contract: C
+): ScuffedContract<C> {
   const coder = new AbiCoder();
   const obj: any = {};
-  type K = keyof typeof contract.interface["functions"];
+  const keys = Object.keys(contract.interface.functions);
 
-  for (const fnKey of Object.keys(contract.interface.functions) as Array<K>) {
-    const fragment = contract.interface.functions[fnKey];
-    // const isUnique =
-    const _fn = (inputs: Parameters<typeof contract[K]>) => {
+  keys.forEach((key) => {
+    const fragment = contract.interface.functions[key];
+    const name = fragment.name;
+    const _fn = (...inputs: any[]) => {
       const coders = fragment.inputs.map((i) => coder._getCoder(i));
       const writer = new ScuffedWriter(32);
       pack(writer, coders, inputs);
@@ -101,19 +126,18 @@ export function getScuffedContract(contract: Contract) {
       );
       return rewritableObject;
     };
-    const name = fragment.name;
     if (
       Object.values(contract.interface.functions).filter((f) => f.name === name)
         .length === 1
     ) {
       obj[name] = _fn;
     }
-    obj[fnKey] = _fn;
-  }
+    obj[key] = _fn;
+  });
   return obj;
 }
 
-export function getScuffedFunction(fn: FunctionFragment, inputs: any) {
+export function getScuffedFunction(fn: FunctionFragment, ...inputs: any) {
   const coder = new AbiCoder();
   const coders = fn.inputs.map((i) => coder._getCoder(i));
   const writer = new ScuffedWriter(32);
