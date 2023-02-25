@@ -10,13 +10,13 @@ describe("", () => {
   });
 
   it("allowsBadCalldata", async () => {
-    const scuff = contract.allowsBadCalldata([{ val1: 100, val2: 1000 }]);
+    const scuff = contract.allowsBadCalldata({ val1: 100, val2: 1000 });
     scuff.data.val1.replace(3000);
     expect(await scuff.call()).to.eq(3000);
   });
 
   it("disallowsBadCalldata", async () => {
-    const scuff = contract.disallowsBadCalldata([{ val1: 100, val2: 1000 }]);
+    const scuff = contract.disallowsBadCalldata({ val1: 100, val2: 1000 });
     scuff.data.val1.replace(3000);
     const err = await scuff.call().catch((err) => {
       return err;
