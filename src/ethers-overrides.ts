@@ -2,46 +2,83 @@ import { Coder, Writer } from "@ethersproject/abi/lib/coders/abstract-coder";
 import { TupleCoder } from "@ethersproject/abi/lib/coders/tuple";
 import { ArrayCoder } from "@ethersproject/abi/lib/coders/array";
 import { BytesCoder } from "@ethersproject/abi/lib/coders/bytes";
-import { DynamicOffsets, FixedOffsets, Offsets, ReplaceableOffsets } from "./types";
+import {
+  DynamicOffsets,
+  FixedOffsets,
+  Offsets,
+  ReplaceableOffsets,
+} from "./types";
 import { BigNumberish } from "@ethersproject/bignumber";
-import { concat } from "@ethersproject/bytes";
+import { concat, hexValue } from "@ethersproject/bytes";
+
+type LogReplacement = {
+  position: number;
+  oldValue: string;
+  newValue: string;
+  name: string;
+};
 
 export class ScuffedWriter extends Writer {
   namesNest: string[] = [];
   relativeOffsets: Record<string, number> = {};
   absoluteOffsets: Record<string, DynamicOffsets | FixedOffsets> = {};
   children: Record<string, string[]> = {};
-
+  replacements: LogReplacement[] = [];
 
   constructor(wordSize: number, private parentWriter?: ScuffedWriter) {
     super(wordSize);
     if (parentWriter) {
-      this.namesNest = parentWriter.namesNest
-      this.relativeOffsets = parentWriter.relativeOffsets
-      this.absoluteOffsets = parentWriter.absoluteOffsets
-      this.children = parentWriter.children
+      this.namesNest = parentWriter.namesNest;
+      this.relativeOffsets = parentWriter.relativeOffsets;
+      this.absoluteOffsets = parentWriter.absoluteOffsets;
+      this.children = parentWriter.children;
     }
-    this.getName.bind(this)
-    this.updateChildren.bind(this)
-    this.createStructuredOffsetsObject.bind(this)
+    this.getName.bind(this);
+    this.updateChildren.bind(this);
+    this.createStructuredOffsetsObject.bind(this);
   }
 
   get isScuffed() {
     if (this.parentWriter) {
-      return this.parentWriter.isScuffed
+      return this.parentWriter.isScuffed;
     }
     return true;
   }
 
-  replaceWord(offset: number, newValue: BigNumberish) {
-    const allValues = concat(this._data)
+  logReplaceWord(
+    position: number,
+    oldValue: string,
+    newValue: string,
+    name: string
+  ) {
+    if (this.parentWriter) {
+      this.parentWriter.logReplaceWord(position, oldValue, newValue, name);
+    } else {
+      this.replacements.push({
+        position,
+        oldValue,
+        newValue,
+        name,
+      });
+    }
+  }
+
+  replaceWord(offset: number, newValue: BigNumberish, label = "") {
+    const allValues = concat(this._data);
     const start = allValues.slice(0, offset);
     const end = allValues.slice(offset + 32);
+    console.log(this.getName());
+    this.logReplaceWord(
+      offset,
+      hexValue(allValues.slice(offset, offset + 32)),
+      hexValue(newValue),
+      this.getName().concat(label)
+    );
     this._data = [];
     this._dataLength = 0;
-    this._writeData(start)
-    this.writeValue(newValue)
-    this._writeData(end)
+    this._writeData(start);
+    this.writeValue(newValue);
+    this._writeData(end);
     return this.data;
   }
 
@@ -54,7 +91,7 @@ export class ScuffedWriter extends Writer {
       nameParts.push(name);
     }
     return nameParts.join("");
-  };
+  }
 
   updateChildren(parent: string) {
     if (!this.absoluteOffsets[parent]) {
@@ -93,26 +130,35 @@ export class ScuffedWriter extends Writer {
       };
       this.updateChildren(child);
     }
-  };
+  }
 
-  getReplaceableAbsoluteOffsets(name: string): { head?: ReplaceableOffsets; tail?: ReplaceableOffsets; } {
+  getReplaceableAbsoluteOffsets(name: string): {
+    head?: ReplaceableOffsets;
+    tail?: ReplaceableOffsets;
+  } {
     const { head, tail } = this.absoluteOffsets[name];
     return {
-      head: head ? {
-        ...head,
-        replace: (value: BigNumberish) => this.replaceWord(head.absolute, value)
-      } : undefined,
-      tail: tail ? {
-        ...tail,
-        replace: (value: BigNumberish) => this.replaceWord(tail.absolute, value)
-      } : undefined,
-    }
+      head: head
+        ? {
+            ...head,
+            replace: (value: BigNumberish) =>
+              this.replaceWord(head.absolute, value, `${name}.head`),
+          }
+        : undefined,
+      tail: tail
+        ? {
+            ...tail,
+            replace: (value: BigNumberish) =>
+              this.replaceWord(tail.absolute, value, `${name}.tail`),
+          }
+        : undefined,
+    };
   }
 
   createStructuredOffsetsObject(name: string, coder: Coder): any {
     const _children = this.children[name];
     const _offsets = this.getReplaceableAbsoluteOffsets(name);
-  
+
     if (!_children) {
       if (coder.type === "bytes") {
         return {
@@ -120,17 +166,19 @@ export class ScuffedWriter extends Writer {
           tail: {
             relative: _offsets.tail.relative + 32,
             absolute: _offsets.tail.absolute + 32,
-            replace: (value: BigNumberish) => this.replaceWord(
-              _offsets.tail.absolute + 32,
-              value
-            )
+            replace: (value: BigNumberish) =>
+              this.replaceWord(
+                _offsets.tail.absolute + 32,
+                value,
+                `${name}.tail`
+              ),
           },
-          length: _offsets.tail
+          length: _offsets.tail,
         };
       }
       return coder.dynamic ? _offsets : _offsets.tail;
     }
-  
+
     if (coder instanceof TupleCoder) {
       return _children.reduce(
         (obj, child, i) => ({
@@ -152,13 +200,13 @@ export class ScuffedWriter extends Writer {
         }),
         {
           ..._offsets,
-          length: _offsets.tail
+          length: _offsets.tail,
         }
       );
     } else {
       return _offsets;
     }
-  };
+  }
 }
 
 TupleCoder.prototype.encode = function (
@@ -222,17 +270,17 @@ export function pack(
       const name = coder.localName;
       if (!name) {
         throw Error(
-          `cannot encode object for signature with missing names `
-          + JSON.stringify({
-            argument: "values",
-            coder: coder,
-            value: values,
-          })
+          `cannot encode object for signature with missing names ` +
+            JSON.stringify({
+              argument: "values",
+              coder: coder,
+              value: values,
+            })
         );
       }
 
       if (unique[name]) {
-        throw Error("cannot encode object for signature with duplicate names")
+        throw Error("cannot encode object for signature with duplicate names");
       }
 
       unique[name] = true;
@@ -240,19 +288,24 @@ export function pack(
       return values[name];
     });
   } else {
-    throw Error(`invalid tuple value ${JSON.stringify(values)}`)
+    throw Error(
+      `invalid tuple value ${JSON.stringify(values)} for ${coders.map(
+        (c) => c.localName
+      )}`
+    );
   }
 
   if (coders.length !== arrayValues.length) {
-    throw Error(`types/value length mismatch ${JSON.stringify(values)}`)
+    throw Error(`types/value length mismatch ${JSON.stringify(values)}`);
   }
 
   const staticWriter = new ScuffedWriter(32, writer);
   const dynamicWriter = new ScuffedWriter(32, writer);
   const updateFuncs: Array<(baseOffset: number) => void> = [];
 
-  const parentName = writer.isScuffed ? writer.getName() : '';
-  if (parentName && !writer.children[parentName]) writer.children[parentName] = [];
+  const parentName = writer.isScuffed ? writer.getName() : "";
+  if (parentName && !writer.children[parentName])
+    writer.children[parentName] = [];
 
   coders.forEach((coder, index) => {
     const value = arrayValues[index];
@@ -284,7 +337,7 @@ export function pack(
         if (writer.isScuffed) {
           writer.relativeOffsets[`${thisName}@head`] = headOffset;
           writer.relativeOffsets[thisName] = baseOffset + dynamicOffset;
-          if (thisName.endsWith(']')) {
+          if (thisName.endsWith("]")) {
             writer.relativeOffsets[thisName] += 32;
           }
         }
@@ -293,7 +346,7 @@ export function pack(
     } else {
       if (writer.isScuffed) {
         writer.relativeOffsets[thisName] = staticWriter.length;
-        if (thisName.endsWith(']')) {
+        if (thisName.endsWith("]")) {
           writer.relativeOffsets[thisName] += 32;
         }
       }

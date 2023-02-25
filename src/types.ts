@@ -21,5 +21,5 @@ export type ParamOffsets =
   | ElementOffsets[];
 
 export type ReplaceableOffsets = Offsets & {
-  replace: (value: BigNumberish) => string
-}
+  replace: (value: BigNumberish) => string;
+};
